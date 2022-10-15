@@ -1,7 +1,7 @@
-# PropDumper
+# PropDumper - File Property/Metadata Dumper
 ![Screenshot](https://i.imgur.com/jYWgtYA.jpg)
 
-This program will create a dump of all properties visible to Explorer which aren't blank for the given file.
+This program will create a dump of all properties and metadata visible to Explorer which aren't blank for the given file.
 
 You can create these output files with the specified extension, in the same folder where the file resides or a central folder. If the output already exists, there's an option to rename to the next available name the same way Windows does, File (1).txt, File (2).txt, whatever number is available.
 
