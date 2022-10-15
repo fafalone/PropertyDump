@@ -1,4 +1,4 @@
-# PropertyDump
+# PropDumper
 ![Screenshot](https://i.imgur.com/jYWgtYA.jpg)
 
 This program will create a dump of all properties visible to Explorer which aren't blank for the given file.
