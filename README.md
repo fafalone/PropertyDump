@@ -20,7 +20,7 @@ One of the new features is defining COM interfaces locally; I made this project 
 ## Requirements
 Windows 7+
 
-Source and binaries are self-contained, no installation or additional appendencies.
+Source and binaries are self-contained, no installation or additional dependencies.
 
 Building from source requires [twinBASIC Beta 147](https://github.com/twinbasic/twinbasic/releases) or newer.
 
