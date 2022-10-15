@@ -1,0 +1,409 @@
+[ Description ("") ]
+[ FormDesignerId ("DAD528F2-5910-4002-AA88-D20C5C672039") ]
+[ PredeclaredId ]
+Class Form1
+Option Explicit
+
+Private sPathOut As string
+Private sPathStart As String
+Private sPattern As String
+Private sExt As String
+Private bCurDir As boolean
+Private bRecurse As boolean
+Private nCount As long
+Private bAbort As boolean
+Private bRemoveFmt As boolean
+
+Private Declare PtrSafe Function SendMessage Lib "user32" Alias "SendMessageA" (ByVal hWnd As LongPtr, ByVal wMsg As Long, ByVal wParam As LongPtr, lParam As Any) As LongPtr
+Private DeclareWide PtrSafe Function PathFileExistsW Lib "shlwapi" (ByVal lpszPath As String) As Long
+Private Declare PtrSafe Function CreateFileW Lib "kernel32" (ByVal lpFileName As LongPtr, ByVal dwDesiredAccess As Long, ByVal dwShareMode As Long, lpSecurityAttributes As Any, ByVal dwCreationDisposition As Long, ByVal dwFlagsAndAttributes As Long, ByVal hTemplateFile As LongPtr) As LongPtr
+Private Declare PtrSafe Function WriteFile Lib "kernel32.dll" (ByVal hFile As LongPtr, lpBuffer As Any, ByVal nNumberOfBytesToWrite As Long, lpNumberOfBytesWritten As Long, lpOverlapped As LongPtr) As Long
+Private Declare PtrSafe Function CloseHandle Lib "kernel32" (ByVal hObject As LongPtr) As Long
+Private Declare PtrSafe Function SetFilePointer Lib "kernel32" (ByVal hFile As LongPtr, ByVal lDistanceToMove As Long, lpDistanceToMoveHigh As Long, ByVal dwMoveMethod As Long) As Long
+Private Declare PtrSafe Function PathMatchSpec Lib "shlwapi" Alias "PathMatchSpecW" (ByVal pszFileParam As LongPtr, ByVal pszSpec As LongPtr) As Boolean
+Private Declare PtrSafe Function SysReAllocString Lib "oleaut32.dll" (ByVal pBSTR As LongPtr, Optional ByVal pszStrPtr As LongPtr) As Long
+Private DeclareWide PtrSafe Function SHCreateDirectory Lib "shell32.dll" (ByVal hWnd As LongPtr, ByVal pszPath As String) As Long
+Private Declare PtrSafe Function PSGetPropertyDescription Lib "propsys.dll" (PropKey As PROPERTYKEY, riid As UUID, ppv As Any) As Long
+Private Declare PtrSafe Function PSFormatPropertyValue Lib "propsys.dll" (ByVal pps As LongPtr, ByVal ppd As LongPtr, ByVal pdff As PROPDESC_FORMAT_FLAGS, ppszDisplay As LongPtr) As Long
+Private Declare PtrSafe Function PeekMessage Lib "user32" Alias "PeekMessageA" (lpMsg As MSG, ByVal hWnd As LongPtr, ByVal wMsgFilterMin As Long, ByVal wMsgFilterMax As Long, ByVal wRemoveMsg As Long) As Long
+Private Declare PtrSafe Function TranslateMessage Lib "user32" (ByRef lpMsg As Any) As Long
+Private Declare PtrSafe Function DispatchMessage Lib "user32" Alias "DispatchMessageW" (ByRef lpMsg As Any) As LongPtr
+Private Declare PtrSafe Function PathYetAnotherMakeUniqueName Lib "shell32.dll" (ByVal pszUniqueName As LongPtr, ByVal pszPath As LongPtr, Optional ByVal pszShort As LongPtr, Optional ByVal pszFileSpec As LongPtr) As Long
+Private Declare PtrSafe Function SysReAllocStringLen Lib "oleaut32.dll" (ByVal pBSTR As LongPtr, Optional ByVal pszStrPtr As LongPtr, Optional ByVal Length As Long) As Long
+Private Declare PtrSafe Function lstrlenW Lib "kernel32" (lpString As Any) As Long
+                                
+                                                             
+Private Const FILE_END As Long = 2&
+Private Const GENERIC_WRITE   As Long = &H40000000
+Private Const FILE_SHARE_READ = &H1&
+Private Const OPEN_ALWAYS As Long = 4&
+Private Const CREATE_ALWAYS = 2&
+
+
+Private Const SB_BOTTOM = 7
+Private Const EM_SCROLL As Integer = &HB5
+
+Private Sub AppendLog(sMsg As String)
+sMsg = "[" & Format$(Now, "Hh:nn:Ss") & "] " & sMsg
+txtLog.Text = txtLog.Text & sMsg & vbCrLf
+SendMessage txtLog.hWnd, EM_SCROLL, SB_BOTTOM, ByVal 0&
+End Sub
+
+Private Sub WriteStrToFile(sIn As String, szFile As String, Optional bAppend As Boolean = False)
+    'Simple function to write a single string to file as-is
+    Dim hFile As LongPtr
+    Dim RetVal As Long
+    Dim lngBytesWritten As Long
+
+    If Not bAppend Then
+        hFile = CreateFileW(StrPtr(szFile), GENERIC_WRITE, FILE_SHARE_READ, _
+                    ByVal 0&, CREATE_ALWAYS, FILE_ATTRIBUTE_ARCHIVE, 0&)
+    
+        If hFile = -1 Then AppendLog "ERROR: Output file could not be opened for writing (" & Err.Description & "): " & szFile
+    Else
+        'open the file for appending
+        hFile = CreateFileW(StrPtr(szFile), GENERIC_WRITE, FILE_SHARE_READ, _
+                    ByVal 0&, OPEN_ALWAYS, FILE_ATTRIBUTE_ARCHIVE, 0&)
+        
+        If hFile = -1 Then AppendLog "ERROR: Output could not be opened for writing (" & Err.Description & "): " & szFile
+    End If
+    If hFile Then
+        'we need to move to EOF
+        RetVal = SetFilePointer(hFile, 0&, 0&, FILE_END)
+        RetVal = WriteFile(hFile, ByVal sIn, Len(sIn), lngBytesWritten, ByVal 0&)
+        RetVal = CloseHandle(hFile)
+    End If
+End Sub
+
+Private Function UniqueNameInSeq(ByRef sPath As String) As String
+Dim sBuf As String
+
+SysReAllocStringLen VarPtr(sBuf), , MAX_PATH
+
+If PathYetAnotherMakeUniqueName(StrPtr(sBuf), StrPtr(sPath)) Then
+    UniqueNameInSeq = Left$(sBuf, lstrlenW(StrPtr(sBuf)))
+End If
+End Function
+
+Private Sub RemoveFormatChars(sIn As String)
+    sIn = Replace$(sIn, ChrW$(&H200E), "")
+    sIn = Replace$(sIn, ChrW$(&H200F), "")
+    sIn = Replace$(sIn, ChrW$(&H202A), "")
+    sIn = Replace$(sIn, ChrW$(&H202C), "")
+End Sub
+
+
+Public Function LPWSTRtoStr(lPtr As LongPtr, Optional ByVal fFree As Boolean = True) As String
+SysReAllocString VarPtr(LPWSTRtoStr), lPtr
+If fFree Then
+    Call CoTaskMemFree(lPtr)
+End If
+End Function
+
+Private Sub FastDoEvents()
+    Dim uMsg As MSG
+    '
+    Do While PeekMessage(uMsg, 0&, 0&, 0&, PM_REMOVE)   ' Reads and deletes message from queue.
+        TranslateMessage uMsg                           ' Translates virtual-key messages into character messages.
+        DispatchMessage uMsg                            ' Dispatches a message to a window procedure.
+    Loop
+End Sub
+
+
+Private Function PickFolder() As String
+    Dim fod As IFileOpenDialog = CreateObject(sCLSID_FileOpenDialog)
+    Dim siResult As IShellItem
+    Dim lpPath As LongPtr
+    With fod
+    	.SetTitle "Pick folder"
+        .SetOptions FOS_PICKFOLDERS
+        On Error Resume Next
+        .Show Me.hWnd
+        .GetResult siResult
+        On Error GoTo 0
+        If (siResult Is Nothing) = False Then
+        	siResult.GetDisplayName SIGDN_FILESYSPATH, lpPath
+            PickFolder = LPWSTRtoStr(lpPath)
+        End If
+        
+    End With
+End Function
+
+
+
+Private Sub Form_Load() Handles Form.Load
+    Dim pKFM As IKnownFolderManager = CreateObject(sCLSID_KnownFolderManager)
+    Dim pKFDocs As IKnownFolder
+    pKFM.GetFolder FOLDERID_Documents, pKFDocs
+    If (pKFDocs Is Nothing) = False Then
+        Dim lpPath As LongPtr
+        pKFDocs.GetPath KF_FLAG_DEFAULT, lpPath
+        sPathStart = LPWSTRtoStr(lpPath)
+        txtPath.Text = sPathStart
+    Else
+        'Something went wrong getting the documents folder path, just default to C:\
+        sPathStart = "C:\"
+        txtPath.Text = sPathStart
+    End If
+
+    sPathOut = App.Path
+    txtOutput = App.Path
+    sExt = ".txt"
+    bCurDir = True
+    bRecurse = True
+    sPattern = "*.*"
+    bRemoveFmt = True
+End Sub
+
+Private Sub WalkFolder(sFolder As String)
+    AppendLog "Walk " & sFolder
+    Dim si As IShellItem
+    Dim siChild As IShellItem
+    Dim pEnum As IEnumShellItems
+    Dim pc As Long
+    Dim lAtr As SFGAO_Flags
+    Dim hr As Long
+    hr = SHCreateItemFromParsingName(StrPtr(sFolder), Nothing, IID_IShellItem, si)
+    If (si Is Nothing) = False Then
+        si.BindToHandler 0, BHID_EnumItems, IID_IEnumShellItems, pEnum
+        If (pEnum Is Nothing) = False Then
+            Do While pEnum.Next(1, siChild, pc) = S_OK
+                siChild.GetAttributes SFGAO_FOLDER Or SFGAO_STREAM, lAtr
+                If (lAtr And SFGAO_FOLDER) = SFGAO_FOLDER Then
+                    If ((lAtr And SFGAO_FOLDER) = SFGAO_FOLDER) And ((lAtr And SFGAO_STREAM) = 0) Then
+                        'True folder; zip/cab files will have the SFGAO_FOLDER attribute, but we don't want them-- they'll also have SFGAO_STREAM
+                        If bRecurse Then WalkSubfolder siChild
+                    End If
+                Else
+                    Dim lpName As LongPtr, sName As String
+                    siChild.GetDisplayName SIGDN_NORMALDISPLAY, lpName
+                    sName = LPWSTRtoStr(lpName)
+                    If PathMatchSpec(StrPtr(sName), StrPtr(sPattern)) Then
+                        DumpFileProperties siChild, sName
+                    End If
+                End If
+                If bAbort = True Then Exit Sub
+            Loop
+        End If
+    Else
+        FastDoEvents
+        AppendLog "Couldn't access specified starting folder, hr=" & hr
+    End If
+    
+    
+End Sub
+
+Private Sub WalkSubfolder(si As IShellItem)
+    Dim siChild As IShellItem
+    Dim pEnum As IEnumShellItems
+    Dim pc As Long
+    Dim lAtr As SFGAO_Flags
+    Dim hr As Long
+    If (si Is Nothing) = False Then
+        si.BindToHandler 0, BHID_EnumItems, IID_IEnumShellItems, pEnum
+        Do While pEnum.Next(1, siChild, pc) = S_OK
+        	siChild.GetAttributes SFGAO_FOLDER Or SFGAO_STREAM, lAtr
+            If (lAtr And SFGAO_FOLDER) = SFGAO_FOLDER Then
+                If ((lAtr And SFGAO_FOLDER) = SFGAO_FOLDER) And ((lAtr And SFGAO_STREAM) = 0) Then
+                    'True folder; zip/cab files will have the SFGAO_FOLDER attribute, but we don't want them-- they'll also have SFGAO_STREAM
+                    If bRecurse Then WalkSubfolder siChild
+                End If
+            Else
+                Dim lpName As LongPtr, sName As String
+                siChild.GetDisplayName SIGDN_NORMALDISPLAY, lpName
+                sName = LPWSTRtoStr(lpName)
+                If PathMatchSpec(StrPtr(sName), StrPtr(sPattern)) Then
+                	DumpFileProperties siChild, sName
+                End If
+            End If
+            FastDoEvents
+            If bAbort = True Then Exit Sub
+        Loop
+    Else
+        Dim lpPath As LongPtr, sPath As String
+        si.GetDisplayName SIGDN_FILESYSPATH, lpPath
+        sPath = LPWSTRtoStr(lpPath)
+        AppendLog "Couldn't access subfolder, hr=" & hr & ", path=" & sPath
+    End If
+End Sub
+
+Private Sub DumpFileProperties(siFile As IShellItem, sName As String)
+    Dim sOut As String
+    Dim lpPath As LongPtr, sPath As String
+    siFile.GetDisplayName SIGDN_FILESYSPATH, lpPath
+    sPath = LPWSTRtoStr(lpPath)
+
+    
+    sOut = "Filename: " & sName & vbCrLf
+    sOut &= "File full path: " & sPath & vbCrLf
+
+    Dim si2 As IShellItem2
+    Dim pps As IPropertyStore
+    Dim ppd As IPropertyDescription
+    Dim lpFmt As LongPtr, sPropFmt As String
+    Dim sFileOut As String
+    
+    If bCurDir Then
+        sFileOut = sPath & sExt
+    Else
+        sFileOut = sPathOut & sExt
+    End If
+    If PathFileExistsW(sFileOut) Then
+        If chkRename.Value = vbChecked Then
+            sFileOut = UniqueNameInSeq(sFileOut)
+        Else
+            AppendLog "Skipping " & sName & "; output file exists."
+            Exit Sub
+        End If
+    End If
+    
+    Set si2 = siFile
+    si2.GetPropertyStore GPS_DEFAULT Or GPS_BESTEFFORT Or GPS_OPENSLOWITEM, IID_IPropertyStore, pps
+    If (pps Is Nothing) = False Then
+        Dim nMax As Long
+        pps.GetCount nMax
+        If nMax Then
+        	AppendLog "Dumping " & nMax & " properties for " & sName & "..."
+                
+            Dim i As Long
+            Dim pk As PROPERTYKEY
+            Dim lpProp As LongPtr, sProp As String
+            Dim lpPropC As LongPtr, sPropC As String
+            Dim lpPropN As LongPtr, sPropN As String
+            For i = 0 To nMax - 1
+                pps.GetAt i, pk
+                If pk.fmtid.Data1 <> 0 Then
+                    PSGetPropertyDescription pk, IID_IPropertyDescription, ppd
+                    If (ppd Is Nothing) = False Then
+                        ppd.GetDisplayName lpPropN
+                        sPropN = LPWSTRtoStr(lpPropN)
+                        ppd.GetCanonicalName lpPropC
+                        sPropC = LPWSTRtoStr(lpPropC)
+                        PSFormatPropertyValue ObjPtr(pps), ObjPtr(ppd), PDFF_DEFAULT, lpProp
+                        sProp = LPWSTRtoStr(lpProp)
+                        If bRemoveFmt Then RemoveFormatChars(sProp)
+                        If sProp <> "" Then sOut &= sPropN & " (" & sPropC & ")=" & sProp & vbCrLf
+                    Else
+                        Debug.Print "Couldn't get propdesc for " & dbg_PKEYToString(pk)
+                    End If
+                End If
+            Next i
+        Else
+            sOut &= "No properties listed for file."
+        End If
+    Else
+        AppendLog "Couldn't open property store for " & sPath
+        sOut &= "Couldn't open property store for this file."
+    End If
+    
+
+    WriteStrToFile sOut, sFileOut
+    nCount = nCount + 1
+End Sub
+
+Private Sub txtExt_Change() Handles txtExt.Change
+    sExt = txtExt.Text
+End Sub
+
+Private Sub Option1_Click(Index As Integer) Handles Option1.Click
+    bCurDir = (Option1(0).Value = True)
+End Sub
+
+Private Sub chkRecurse_Click() Handles chkRecurse.Click
+    bRecurse = (chkRecurse.Value = vbChecked)
+End Sub
+
+Private Sub chkFmt_Click() Handles chkFmt.Click
+    bRemoveFmt = (chkFmt.Value = vbChecked)
+End Sub
+
+Private Sub cmdPath_Click() Handles cmdPath.Click
+    Dim sFolder As String
+    sFolder = PickFolder()
+    If sFolder <> "" Then
+    	txtPath.Text = sFolder
+        sPathStart = sFolder
+    End If
+    
+End Sub
+
+Private Sub txtPath_Change() Handles txtPath.Change
+    sPathStart = txtPath.Text
+End Sub
+
+Private Sub txtFilter_Change() Handles txtFilter.Change
+    sPattern = txtFilter.Text
+End Sub
+
+Private Sub txtOutput_Change() Handles txtOutput.Change
+    sPathOut = txtOutput.Text
+End Sub
+
+Private Sub cmdOutput_Click() Handles cmdOutput.Click
+    Dim sFolder As String
+    sFolder = PickFolder()
+    If sFolder <> "" Then
+    	txtOutput.Text = sFolder
+        sPathOut = sFolder
+    End If
+End Sub
+
+Private Sub cmdStart_Click() Handles cmdStart.Click
+    bAbort = False
+    nCount = 0
+    If PathFileExistsW(sPathStart) = 0 Then
+        MsgBox "Can't find starting folder.", vbCritical, "Error"
+        Exit Sub
+    End If
+    If bCurDir = False Then
+        If PathFileExistsW(sPathOut) = 0 Then
+            Dim r As VbMsgBoxResult
+            r = MsgBox("Output folder doesn't exist, create?", vbYesNo, "Create path")
+            If r = vbYes Then
+                SHCreateDirectory Me.hWnd, sPathOut
+                If PathFileExistsW(sPathOut) = 0 Then
+                    MsgBox "Couldn't create output folder.", vbCritical, "Error"
+                    Exit Sub
+                End If
+            Else
+                AppendLog "Please define an existing folder if you do not wish to create a new one."
+                Exit Sub
+            End If
+        End If
+    End If
+    
+    cmdStart.Enabled = False
+    cmdStop.Enabled = True
+    AppendLog "Starting property dump..."
+    WalkFolder sPathStart
+    AppendLog "Finished. Create property dumps for " & nCount & "files."
+    cmdStart.Enabled = True
+    cmdStop.Enabled = False
+End Sub
+
+Private Sub cmdStop_Click() Handles cmdStop.Click
+    bAbort = True
+    cmdStart.Enabled = True
+    cmdStop.Enabled = False
+End Sub
+
+
+Private Function dbg_PKEYToString(tpk As PROPERTYKEY) As String
+Dim sGID As String
+
+sGID = dbg_GUIDToString(tpk.fmtid, False)
+dbg_PKEYToString = "{" & sGID & ", " & tpk.pid & "}"
+End Function
+
+Private Function dbg_GUIDToString(tg As UUID, Optional bBrack As Boolean = True) As String
+'StringFromGUID2 never works, even "working" code from vbaccelerator AND MSDN
+dbg_GUIDToString = Right$("00000000" & Hex$(tg.Data1), 8) & "-" & Right$("0000" & Hex$(tg.Data2), 4) & "-" & Right$("0000" & Hex$(tg.Data3), 4) & _
+"-" & Right$("00" & Hex$(CLng(tg.Data4(0))), 2) & Right$("00" & Hex$(CLng(tg.Data4(1))), 2) & "-" & Right$("00" & Hex$(CLng(tg.Data4(2))), 2) & _
+Right$("00" & Hex$(CLng(tg.Data4(3))), 2) & Right$("00" & Hex$(CLng(tg.Data4(4))), 2) & Right$("00" & Hex$(CLng(tg.Data4(5))), 2) & _
+Right$("00" & Hex$(CLng(tg.Data4(6))), 2) & Right$("00" & Hex$(CLng(tg.Data4(7))), 2)
+If bBrack Then dbg_GUIDToString = "{" & dbg_GUIDToString & "}"
+End Function
+
+    
+   
+End Class
