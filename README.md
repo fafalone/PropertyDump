@@ -17,6 +17,9 @@ One of the new features is defining COM interfaces locally; I made this project 
 
 (Note that since this project uses new language features in tB, it would take some work to backport it to VB6-- tB is backwards compatible, not forwards compatible, just like VBA7x64 isn't compatible with 32bit VBA6 or VB6). 
 
+## Requirements
+Windows 7+
+Source and binaries are self-contained, no installation or additional appendencies.
 
 ## SOURCE CODE NOTES
 
