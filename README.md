@@ -22,6 +22,8 @@ Windows 7+
 
 Source and binaries are self-contained, no installation or additional appendencies.
 
+Building from source requires [twinBASIC Beta 147](https://github.com/twinbasic/twinbasic/releases) or newer.
+
 ## SOURCE CODE NOTES
 
 For anyone unfamiliar with twinBASIC source code structure, it combines all source into a single file. The .twinproj file in the root above is the complete source code; it's large because it includes the library dependencies- tbShellLib (my project) and the twinBASIC WinNativeForms package that create the Forms/Controls, as well as the program icon and manifest. You can browse the local project source code to this program itself in the SourceBrowse folder, but you need the .twinproj file to open and compile it yourself in twinBASIC. You can also browse the source for tbShellLib [in it's repository](https://github.com/fafalone/tbShellLib).
